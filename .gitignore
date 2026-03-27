@@ -1,0 +1,7 @@
+.venv/
+.ai-dev-kit/
+.claude/
+.cursor/
+.mcp.json
+__pycache__/
+*.pyc
