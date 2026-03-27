@@ -248,6 +248,7 @@ baseline = {}
 for name, imgs, pos, neg in [
     ("train", train_images, train_texts, None),
     ("valid", valid_images, valid_texts, valid_neg_texts),
+    ("test",  test_images,  test_texts,  test_neg_texts),
 ]:
     metrics = evaluate(name, imgs, pos, neg)
     baseline[name] = metrics
@@ -578,7 +579,13 @@ signature = ModelSignature(
 )
 
 with mlflow.start_run(run_name=f"siglip2-ft-{SCHEMA_NAME}") as run:
-    # メトリクス
+    # ベースラインメトリクス (ファインチューニング前)
+    for split, metrics in baseline.items():
+        for k, v in metrics.items():
+            if v is not None:
+                mlflow.log_metric(f"baseline_{split}_{k}", v)
+
+    # ファインチューニング後メトリクス
     for split, metrics in final_results.items():
         for k, v in metrics.items():
             if v is not None:
