@@ -216,20 +216,28 @@ def encode_texts(texts: List[str], batch_size: int = 32) -> torch.Tensor:
 
 
 def evaluate(split_name, images, pos_texts, neg_texts=None):
-    """Triplet Accuracy と Recall@1 を計算"""
+    """Triplet Accuracy と Recall@1 を計算（メモリ効率版）"""
     model.eval()
-    img_embs = encode_images(images)
-    pos_embs = encode_texts(pos_texts)
+    img_embs = encode_images(images).cpu()
+    pos_embs = encode_texts(pos_texts).cpu()
 
-    # Recall@1
-    cos = torch.nn.functional.cosine_similarity(img_embs.unsqueeze(1), pos_embs.unsqueeze(0), dim=2)
-    _, top_idx = torch.topk(cos, k=1, dim=1)
-    recall_1 = sum(i in top_idx[i].tolist() for i in range(len(images))) / len(images)
+    # Recall@1 (バッチ処理で巨大行列を回避)
+    correct = 0
+    batch_size = 128
+    for i in range(0, len(images), batch_size):
+        # i番目〜のクエリ画像と全テキストの類似度を計算
+        batch_img = img_embs[i:i+batch_size]  # (B, D)
+        cos = batch_img @ pos_embs.T  # (B, N) — CPU上で計算
+        top_idx = cos.argmax(dim=1)  # (B,)
+        for j, idx in enumerate(top_idx.tolist()):
+            if idx == i + j:
+                correct += 1
+    recall_1 = correct / len(images)
 
     # Triplet Accuracy (negative テキストがある場合)
     triplet_acc = None
     if neg_texts:
-        neg_embs = encode_texts(neg_texts)
+        neg_embs = encode_texts(neg_texts).cpu()
         pos_sim = torch.nn.functional.cosine_similarity(img_embs, pos_embs)
         neg_sim = torch.nn.functional.cosine_similarity(img_embs, neg_embs)
         triplet_acc = (pos_sim > neg_sim).float().mean().item()

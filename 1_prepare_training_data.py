@@ -36,7 +36,7 @@ TRAINING_TABLE = f"{CATALOG_NAME}.{SCHEMA_NAME}.training_image_text_pairs"
 IMAGE_VOLUME = f"/Volumes/{CATALOG_NAME}/{SCHEMA_NAME}/training_images"
 
 # サンプル数
-N_SAMPLES = 1000
+N_SAMPLES = 20000
 
 print(f"Training Table : {TRAINING_TABLE}")
 print(f"Image Volume   : {IMAGE_VOLUME}")
