@@ -93,6 +93,31 @@ environments:
         - pynvml
 ```
 
+### Memory Efficiency
+
+When scaling from 1K to 20K images, the evaluation step ran into CUDA OOM during Recall@1 computation. The naive approach builds an N×N cosine similarity matrix (20K × 20K × float32 ≈ 424 GiB), which far exceeds A10's 24 GB VRAM.
+
+**Solution: Batched computation on CPU**
+
+```python
+# Before (OOM with large N):
+cos = F.cosine_similarity(img_embs.unsqueeze(1), pos_embs.unsqueeze(0), dim=2)  # N×N on GPU
+
+# After (memory-efficient):
+img_embs = encode_images(images).cpu()   # Move to CPU
+pos_embs = encode_texts(pos_texts).cpu()
+
+for i in range(0, len(images), batch_size):
+    batch_img = img_embs[i:i+batch_size]  # (B, D)
+    cos = batch_img @ pos_embs.T          # (B, N) — on CPU, B rows at a time
+    top_idx = cos.argmax(dim=1)
+```
+
+Key techniques applied:
+- **CPU offload**: Embeddings are moved to CPU after encoding, keeping GPU memory free for the next batch
+- **Batched similarity**: Instead of N×N, compute B×N at a time (B=128), reducing peak memory from O(N²) to O(B×N)
+- **Mixed precision training**: Forward pass uses `torch.autocast("cuda", dtype=torch.float16)` while loss is computed in fp32
+
 ### Customization
 
 - Replace the data loading section in `1_prepare_training_data.py` with your own data
@@ -210,6 +235,31 @@ environments:
         - transformers==4.51.3
         - pynvml
 ```
+
+### メモリ効率の工夫
+
+1,000 枚から 20,000 枚にスケールした際、評価ステップの Recall@1 計算で CUDA OOM が発生しました。素朴な実装では N×N のコサイン類似度行列（20K × 20K × float32 ≈ 424 GiB）を作るため、A10 の 24 GB VRAM を大幅に超過します。
+
+**解決策: バッチ処理 + CPU オフロード**
+
+```python
+# 変更前（大規模データで OOM）:
+cos = F.cosine_similarity(img_embs.unsqueeze(1), pos_embs.unsqueeze(0), dim=2)  # GPU 上に N×N 行列
+
+# 変更後（メモリ効率版）:
+img_embs = encode_images(images).cpu()   # エンコード後 CPU に移動
+pos_embs = encode_texts(pos_texts).cpu()
+
+for i in range(0, len(images), batch_size):
+    batch_img = img_embs[i:i+batch_size]  # (B, D)
+    cos = batch_img @ pos_embs.T          # (B, N) — CPU 上で B 行ずつ計算
+    top_idx = cos.argmax(dim=1)
+```
+
+適用したテクニック:
+- **CPU オフロード**: エンコード後のエンベディングを CPU に移動し、GPU メモリを次のバッチのために解放
+- **バッチ類似度計算**: N×N ではなく B×N（B=128）ずつ計算し、ピークメモリを O(N²) → O(B×N) に削減
+- **Mixed Precision**: forward は `torch.autocast("cuda", dtype=torch.float16)` で実行し、損失計算は fp32
 
 ### カスタマイズ
 
